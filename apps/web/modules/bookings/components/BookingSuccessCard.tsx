@@ -1,6 +1,11 @@
 import { useLocale } from "@calcom/lib/hooks/useLocale";
 import { Badge } from "@calcom/ui/components/badge";
+import { Button } from "@calcom/ui/components/button";
 import { CheckIcon } from "@coss/ui/icons";
+import posthog from "posthog-js";
+import { useEffect, useId } from "react";
+import { trackExposure, trackConversion } from "@/lib/pilot-experiments";
+import { useIsPostBookingUpsellEnabled } from "../hooks/useIsPostBookingUpsellEnabled";
 
 export interface BookingSuccessCardProps {
   title: string;
@@ -13,6 +18,8 @@ export interface BookingSuccessCardProps {
   attendeeName: string | null;
   attendeeEmail: string | null;
   location: string | null;
+  hostBookingPageUrl?: string | null;
+  attendeeUserId?: string | null;
 }
 
 export function BookingSuccessCard({
@@ -26,8 +33,32 @@ export function BookingSuccessCard({
   attendeeName,
   attendeeEmail,
   location,
+  hostBookingPageUrl,
+  attendeeUserId,
 }: BookingSuccessCardProps) {
   const { t } = useLocale();
+  const isUpsellEnabled = useIsPostBookingUpsellEnabled();
+  const experimentKey = "post_booking_upsell_prompt";
+  const variant = isUpsellEnabled ? "treatment" : "control";
+  const userId = attendeeUserId ?? "anonymous";
+
+  useEffect(() => {
+    trackExposure(experimentKey, variant, userId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleFollowUpClick = () => {
+    posthog.capture("booking_followup_clicked", {
+      variant,
+      host_booking_page_url: hostBookingPageUrl,
+    });
+    trackConversion(experimentKey, variant, userId, "booking_followup_clicked", {
+      host_booking_page_url: hostBookingPageUrl,
+    });
+    if (hostBookingPageUrl) {
+      window.open(hostBookingPageUrl, "_blank", "noopener,noreferrer");
+    }
+  };
 
   return (
     <div className="h-screen">
@@ -104,6 +135,24 @@ export function BookingSuccessCard({
                     )}
                   </div>
                 </div>
+
+                {isUpsellEnabled && (
+                  <div className="border-subtle mt-6 rounded-lg border bg-muted px-6 py-4 text-center">
+                    <p className="text-emphasis mb-3 font-semibold text-sm">
+                      {t("want_to_meet_again") || "Want to meet again?"}
+                    </p>
+                    <p className="text-default mb-4 text-sm">
+                      {t("book_a_followup_description") || "Schedule a follow-up meeting while it's fresh."}
+                    </p>
+                    <Button
+                      color="secondary"
+                      className="rounded-[10px]"
+                      onClick={handleFollowUpClick}
+                      disabled={!hostBookingPageUrl}>
+                      {t("book_a_followup") || "Book a follow-up"}
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
